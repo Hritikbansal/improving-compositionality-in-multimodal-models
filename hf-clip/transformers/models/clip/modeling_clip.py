@@ -196,10 +196,10 @@ class CLIPTextEmbeddings(nn.Module):
 
         position_embeddings = self.position_embedding(position_ids)
 
-        if self.rotary:
-            embeddings = inputs_embeds
-        else:
-            embeddings = inputs_embeds + position_embeddings
+        # if self.rotary:
+        #     embeddings = inputs_embeds
+        # else:
+        embeddings = inputs_embeds + position_embeddings
 
         return embeddings
 
@@ -281,7 +281,6 @@ class CLIPAttention(nn.Module):
         src_len = key_states.size(1)
 
         if sinusoidal_pos is not None:
-            print('I am here')
             _rotary_shape = (bsz, self.num_heads, -1, self.head_dim)
             query_states, key_states = map(lambda x: x.view(*_rotary_shape), (query_states, key_states))
             query_states, key_states = self.apply_rotary_position_embeddings(sinusoidal_pos, query_states, key_states)
@@ -582,10 +581,11 @@ class CLIPEncoder(nn.Module):
         self.config = config
         self.layers = nn.ModuleList([CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         self.gradient_checkpointing = False
-        self.embed_rotary_positions = SinusoidalPositionalEmbedding(
-            config.max_position_embeddings, config.hidden_size // config.num_attention_heads
-        )
         self.rotary = rotary
+        if self.rotary:
+            self.embed_rotary_positions = SinusoidalPositionalEmbedding(
+                config.max_position_embeddings, config.hidden_size // config.num_attention_heads
+            )
 
     def forward(
         self,
