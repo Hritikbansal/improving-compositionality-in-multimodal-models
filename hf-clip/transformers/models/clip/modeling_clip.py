@@ -21,6 +21,7 @@ from typing import Any, Optional, Tuple, Union
 import torch
 import torch.utils.checkpoint
 from torch import nn
+import numpy as np
 
 from ...activations import ACT2FN
 from ...modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling
@@ -87,8 +88,8 @@ class SinusoidalPositionalEmbedding(nn.Embedding):
         )
         out.requires_grad = False  # set early to avoid an error in pytorch-1.8+
         sentinel = dim // 2 if dim % 2 == 0 else (dim // 2) + 1
-        out[:, 0:sentinel] = torch.FloatTensor(np.sin(position_enc[:, 0::2]))
-        out[:, sentinel:] = torch.FloatTensor(np.cos(position_enc[:, 1::2]))
+        out[:, 0:sentinel] = torch.Tensor(np.sin(position_enc[:, 0::2]))
+        out[:, sentinel:] = torch.Tensor(np.cos(position_enc[:, 1::2]))
         out.detach_()
         return out
 
@@ -169,13 +170,13 @@ class CLIPVisionEmbeddings(nn.Module):
 
 
 class CLIPTextEmbeddings(nn.Module):
-    def __init__(self, config: CLIPTextConfig, rotary: bool):
+    def __init__(self, config: CLIPTextConfig, rotary = False):
         super().__init__()
         embed_dim = config.hidden_size
 
         self.token_embedding = nn.Embedding(config.vocab_size, embed_dim)
         self.position_embedding = nn.Embedding(config.max_position_embeddings, embed_dim)
-        self.rotary = False
+        self.rotary = rotary
         # position_ids (1, len position emb) is contiguous in memory and exported when serialized
         self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
 
@@ -280,6 +281,7 @@ class CLIPAttention(nn.Module):
         src_len = key_states.size(1)
 
         if sinusoidal_pos is not None:
+            print('I am here')
             _rotary_shape = (bsz, self.num_heads, -1, self.head_dim)
             query_states, key_states = map(lambda x: x.view(*_rotary_shape), (query_states, key_states))
             query_states, key_states = self.apply_rotary_position_embeddings(sinusoidal_pos, query_states, key_states)
@@ -578,7 +580,7 @@ class CLIPEncoder(nn.Module):
     def __init__(self, config: CLIPConfig, rotary = False):
         super().__init__()
         self.config = config
-        self.layers = nn.ModuleList([CLIPEncoderLayer(config, rotary) for _ in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList([CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         self.gradient_checkpointing = False
         self.embed_rotary_positions = SinusoidalPositionalEmbedding(
             config.max_position_embeddings, config.hidden_size // config.num_attention_heads
@@ -682,12 +684,12 @@ class CLIPEncoder(nn.Module):
 
 
 class CLIPTextTransformer(nn.Module):
-    def __init__(self, config: CLIPTextConfig):
+    def __init__(self, config: CLIPTextConfig, rotary = True):
         super().__init__()
         self.config = config
         embed_dim = config.hidden_size
-        self.embeddings = CLIPTextEmbeddings(config)
-        self.encoder = CLIPEncoder(config)
+        self.embeddings = CLIPTextEmbeddings(config, rotary)
+        self.encoder = CLIPEncoder(config, rotary)
         self.final_layer_norm = nn.LayerNorm(embed_dim)
 
     @add_start_docstrings_to_model_forward(CLIP_TEXT_INPUTS_DOCSTRING)
