@@ -391,7 +391,6 @@ class MultiheadAttention(nn.Module):
                     value = key
             else:
                 query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
-
         sequence_length, batch_size, embed_dim = query.shape 
         proj_shape = (batch_size * self.num_heads, -1, self.head_dim)
 
@@ -406,19 +405,17 @@ class MultiheadAttention(nn.Module):
 
         key = key.view(sequence_length, -1, self.head_dim)
         key = key.transpose(1,0)
-
+        # print(key.shape)
         if sinusoidal_pos is not None:
             _rotary_shape = (batch_size, self.num_heads, -1, self.head_dim)
             query, key = map(lambda x: x.view(*_rotary_shape), (query, key))
             query, key = self.apply_rotary_position_embeddings(sinusoidal_pos, query, key)
             query, key = map(lambda x: x.view(*proj_shape), (query, key))
-
         query = query.transpose(1,0)
         query = query.view(sequence_length, -1, embed_dim)
 
         key = key.transpose(1,0)
         key = key.view(sequence_length, -1, embed_dim)
-
         if not self._qkv_same_embed_dim:
             attn_output, attn_output_weights = F.multi_head_attention_forward(
                 query, key, value, self.embed_dim, self.num_heads,
@@ -446,10 +443,10 @@ class MultiheadAttention(nn.Module):
             return attn_output, attn_output_weights
 
 class ResidualAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, rotary = False):
         super().__init__()
 
-        self.attn = MultiheadAttention(d_model, n_head, rotary=True)
+        self.attn = MultiheadAttention(d_model, n_head, rotary=rotary)
         self.ln_1 = LayerNorm(d_model)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(d_model, d_model * 4)),
@@ -470,18 +467,18 @@ class ResidualAttentionBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, rotary = False):
         super().__init__()
         self.width = width
         self.layers = layers
-        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask, rotary) for _ in range(layers)])
 
     def forward(self, x: torch.Tensor):
         return self.resblocks(x)
 
 
 class VisualTransformer(nn.Module):
-    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int):
+    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, rotary: bool = False):
         super().__init__()
         self.input_resolution = input_resolution
         self.output_dim = output_dim
@@ -492,7 +489,7 @@ class VisualTransformer(nn.Module):
         self.positional_embedding = nn.Parameter(scale * torch.randn((input_resolution // patch_size) ** 2 + 1, width))
         self.ln_pre = LayerNorm(width)
 
-        self.transformer = Transformer(width, layers, heads)
+        self.transformer = Transformer(width, layers, heads, rotary = False)
 
         self.ln_post = LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
@@ -559,12 +556,12 @@ class CLIP(nn.Module):
                 heads=vision_heads,
                 output_dim=embed_dim
             )
-
         self.transformer = Transformer(
             width=transformer_width,
             layers=transformer_layers,
             heads=transformer_heads,
-            attn_mask=self.build_attention_mask()
+            attn_mask=self.build_attention_mask(),
+            rotary = True
         )
 
         self.vocab_size = vocab_size
@@ -625,7 +622,7 @@ class CLIP(nn.Module):
     def get_text_features(self, input_ids = None, attention_mask = None):
         x = self.token_embedding(input_ids).type(self.dtype)  # [batch_size, n_ctx, d_model]
 
-        # x = x + self.positional_embedding.type(self.dtype)
+        x = x + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
@@ -696,7 +693,6 @@ def build(state_dict: dict, pretrained: bool):
     transformer_width = state_dict["ln_final.weight"].shape[0]
     transformer_heads = transformer_width // 64
     transformer_layers = len(set(k.split(".")[2] for k in state_dict if k.startswith(f"transformer.resblocks")))
-
     model = CLIP(
         embed_dim,
         image_resolution, vision_layers, vision_width, vision_patch_size,

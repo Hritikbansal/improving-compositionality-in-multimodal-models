@@ -89,7 +89,7 @@ def worker(rank, options, logger):
             state_dict = checkpoint["state_dict"]
             if(not options.distributed and next(iter(state_dict.items()))[0].startswith("module")):
                 state_dict = {key[len("module."):]: value for key, value in state_dict.items()}
-            model.load_state_dict(state_dict)
+            model.load_state_dict(state_dict, strict=False)
             if(optimizer is not None): optimizer.load_state_dict(checkpoint["optimizer"])
             logging.info(f"Loaded checkpoint '{options.checkpoint}' (start epoch {checkpoint['epoch']})")
         else:
