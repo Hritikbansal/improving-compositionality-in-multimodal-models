@@ -45,6 +45,8 @@ def parse_args():
     parser.add_argument("--cylambda2", type = float, default = 0, help = "Cyclic regularization lambda 2")
     parser.add_argument("--checkpoint", default = None, type = str, help = "Path to checkpoint to resume training")
     parser.add_argument("--pretrained", default = False, action = "store_true", help = "Use the OpenAI pretrained models")
+    parser.add_argument("--keep_positional", default = False, action = "store_true", help = "keep positional embeddings")
+    parser.add_argument("--rotate", default = False, action = "store_true", help = "whether to rotate embeddings or not")
 
     options = parser.parse_args()
     return options

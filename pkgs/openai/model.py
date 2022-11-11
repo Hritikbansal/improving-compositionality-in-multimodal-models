@@ -531,7 +531,9 @@ class CLIP(nn.Module):
                  vocab_size: int,
                  transformer_width: int,
                  transformer_heads: int,
-                 transformer_layers: int
+                 transformer_layers: int,
+                 keep_positional: bool,
+                 rotate: bool,
                  ):
         super().__init__()
 
@@ -561,14 +563,14 @@ class CLIP(nn.Module):
             layers=transformer_layers,
             heads=transformer_heads,
             attn_mask=self.build_attention_mask(),
-            rotary = True
+            rotary = rotate
         )
 
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(vocab_size, transformer_width)
         self.positional_embedding = nn.Parameter(torch.empty(self.context_length, transformer_width))
         self.ln_final = LayerNorm(transformer_width)
-
+        self.keep_positional = keep_positional
         self.text_projection = nn.Parameter(torch.empty(transformer_width, embed_dim))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -591,7 +593,7 @@ class CLIP(nn.Module):
                 for name, param in resnet_block.named_parameters():
                     if name.endswith("bn3.weight"):
                         nn.init.zeros_(param)
-
+        
         proj_std = (self.transformer.width ** -0.5) * ((2 * self.transformer.layers) ** -0.5)
         attn_std = self.transformer.width ** -0.5
         fc_std = (2 * self.transformer.width) ** -0.5
@@ -622,7 +624,8 @@ class CLIP(nn.Module):
     def get_text_features(self, input_ids = None, attention_mask = None):
         x = self.token_embedding(input_ids).type(self.dtype)  # [batch_size, n_ctx, d_model]
 
-        x = x + self.positional_embedding.type(self.dtype)
+        if self.keep_positional:
+            x = x + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
@@ -669,7 +672,7 @@ def convert_weights(model: nn.Module):
     model.apply(_convert_weights_to_fp16)
 
 
-def build(state_dict: dict, pretrained: bool):
+def build(state_dict: dict, pretrained: bool, keep_positional: bool, rotate: bool):
     vit = "visual.proj" in state_dict
 
     if vit:
@@ -693,10 +696,12 @@ def build(state_dict: dict, pretrained: bool):
     transformer_width = state_dict["ln_final.weight"].shape[0]
     transformer_heads = transformer_width // 64
     transformer_layers = len(set(k.split(".")[2] for k in state_dict if k.startswith(f"transformer.resblocks")))
+    print(keep_positional)
+    print(rotate)
     model = CLIP(
         embed_dim,
         image_resolution, vision_layers, vision_width, vision_patch_size,
-        context_length, vocab_size, transformer_width, transformer_heads, transformer_layers
+        context_length, vocab_size, transformer_width, transformer_heads, transformer_layers, keep_positional, rotate
     )
 
     for key in ["input_resolution", "context_length", "vocab_size"]:
@@ -705,6 +710,6 @@ def build(state_dict: dict, pretrained: bool):
 
     convert_weights(model)
     if(pretrained):
-        model.load_state_dict(state_dict, strict=False)
+        model.load_state_dict(state_dict)
 
     return model.eval()

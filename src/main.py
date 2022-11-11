@@ -1,5 +1,5 @@
 import os
-os.environ["WANDB_SILENT"] = "true"
+os.environ["WANDB_API_KEY"] = "6dacecbf67b839730e1232f6ac69c8b8fcac97a3"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3" 
 
 import sys
@@ -53,8 +53,11 @@ def worker(rank, options, logger):
     
     options.batch_size = options.batch_size // options.num_devices
 
-    model, processor = load_model(name = options.model_name, pretrained = options.pretrained)
-
+    model, processor = load_model(name = options.model_name, pretrained = options.pretrained, keep_positional = options.keep_positional, rotate = options.rotate)
+    
+    if not options.keep_positional:
+        model.positional_embedding.requires_grad = False
+                    
     if(options.device == "cpu"):
         model.float()
     else:
@@ -100,7 +103,7 @@ def worker(rank, options, logger):
 
     if(options.wandb and options.master):
         logging.debug("Starting wandb")
-        wandb.init(project = "mrl", notes = options.notes, tags = [], config = vars(options))
+        wandb.init(project = "winoground", notes = options.notes, tags = [], config = vars(options))
         wandb.run.name = options.name
         wandb.save(os.path.join(options.log_dir_path, "params.txt"))
 

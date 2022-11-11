@@ -83,7 +83,7 @@ class Processor:
     def process_image(self, image):
         return self.transform(image.convert("RGB"))
 
-def load(name, pretrained = False):
+def load(name, pretrained = False, keep_positional = True, rotate = False):
     if(name in models):
         model_path = download(models[name])
     else:
@@ -92,7 +92,7 @@ def load(name, pretrained = False):
     model = torch.jit.load(model_path, map_location= "cpu").eval()
 
     try:
-        model = build(model.state_dict(), pretrained = pretrained)
+        model = build(model.state_dict(), pretrained = pretrained, keep_positional = keep_positional, rotate = rotate)
     except KeyError:
         state_dict = {key["module.":]: value for key, value in state_dict["state_dict"].items()}
         model = build(state_dict, pretrained = pretrained)
