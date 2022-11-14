@@ -623,7 +623,6 @@ class CLIP(nn.Module):
 
     def get_text_features(self, input_ids = None, attention_mask = None):
         x = self.token_embedding(input_ids).type(self.dtype)  # [batch_size, n_ctx, d_model]
-
         if self.keep_positional:
             x = x + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND

@@ -58,7 +58,7 @@ def worker(rank, options, logger):
     if not options.keep_positional:
         model.positional_embedding.requires_grad = False
                     
-    if(options.device == "cpu"):
+    if(options.device == "cpu"): 
         model.float()
     else:
         torch.cuda.set_device(options.device_ids[options.rank] if options.distributed else options.device_id)
