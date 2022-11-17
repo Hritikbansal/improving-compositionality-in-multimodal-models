@@ -1,5 +1,5 @@
 import os
-os.environ["WANDB_SILENT"] = "true"
+os.environ["WANDB_API_KEY"] = "6dacecbf67b839730e1232f6ac69c8b8fcac97a3"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3" 
 
 import sys
@@ -53,9 +53,12 @@ def worker(rank, options, logger):
     
     options.batch_size = options.batch_size // options.num_devices
 
-    model, processor = load_model(name = options.model_name, pretrained = options.pretrained)
-
-    if(options.device == "cpu"):
+    model, processor = load_model(name = options.model_name, pretrained = options.pretrained, keep_positional = options.keep_positional, rotate = options.rotate)
+    
+    if not options.keep_positional:
+        model.positional_embedding.requires_grad = False
+                    
+    if(options.device == "cpu"): 
         model.float()
     else:
         torch.cuda.set_device(options.device_ids[options.rank] if options.distributed else options.device_id)
@@ -89,7 +92,7 @@ def worker(rank, options, logger):
             state_dict = checkpoint["state_dict"]
             if(not options.distributed and next(iter(state_dict.items()))[0].startswith("module")):
                 state_dict = {key[len("module."):]: value for key, value in state_dict.items()}
-            model.load_state_dict(state_dict)
+            model.load_state_dict(state_dict, strict=False)
             if(optimizer is not None): optimizer.load_state_dict(checkpoint["optimizer"])
             logging.info(f"Loaded checkpoint '{options.checkpoint}' (start epoch {checkpoint['epoch']})")
         else:
@@ -100,7 +103,7 @@ def worker(rank, options, logger):
 
     if(options.wandb and options.master):
         logging.debug("Starting wandb")
-        wandb.init(project = "mrl", notes = options.notes, tags = [], config = vars(options))
+        wandb.init(project = "winoground", notes = options.notes, tags = [], config = vars(options))
         wandb.run.name = options.name
         wandb.save(os.path.join(options.log_dir_path, "params.txt"))
 
