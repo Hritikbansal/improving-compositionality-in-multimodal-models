@@ -15,7 +15,16 @@ device = 'cpu'
 # model = CLIPModel.from_pretrained('openai/clip-vit-base-patch32')
 # image_processor = CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')
 
-model, image_processor = load_model(name = 'RN50', pretrained=True)
+model, image_processor = load_model(name = 'RN50', pretrained = False, keep_positional = True, rotate = True)
+
+checkpoint = '/data0/ckpts/hbansal/winoground/clip500k-rotary-with-pe/checkpoints/epoch_64.pt'
+
+state_dict = torch.load(checkpoint, map_location = device)["state_dict"]
+if(next(iter(state_dict.items()))[0].startswith("module")):
+    state_dict = {key[len("module."):]: value for key, value in state_dict.items()}
+
+model.load_state_dict(state_dict, strict=False)
+model.eval()
 
 dataset = VG_Relation_Test(image_processor.process_image, root_dir=VG_IMAGE_DIR)
 joint_loader = DataLoader(dataset, batch_size=32)
@@ -231,5 +240,5 @@ for k,v in metrics.items():
         print(k, v)
         all_accs.append(v)
 
-np.mean(all_accs)
+print(np.mean(all_accs))
 
