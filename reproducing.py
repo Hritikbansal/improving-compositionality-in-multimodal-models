@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 VG_IMAGE_DIR = '/data0/datasets/VisualGenome/images/'
 
-device = 'cpu'
+device = 'cuda'
 
 # model = CLIPModel.from_pretrained('openai/clip-vit-base-patch32')
 # image_processor = CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')
@@ -24,6 +24,7 @@ if(next(iter(state_dict.items()))[0].startswith("module")):
     state_dict = {key[len("module."):]: value for key, value in state_dict.items()}
 
 model.load_state_dict(state_dict, strict=False)
+model = model.to(device)
 model.eval()
 
 dataset = VG_Relation_Test(image_processor.process_image, root_dir=VG_IMAGE_DIR)
@@ -35,14 +36,14 @@ def get_retrieval_scores_batched(model, joint_loader):
     for batch in tqdm(joint_loader):
         image_options = []
         for i_option in batch["image_options"]:
-            image_embeddings = model.get_image_features(i_option.to(device)).numpy() # B x D
+            image_embeddings = model.get_image_features(i_option.to(device)).cpu().numpy() # B x D
             image_embeddings = image_embeddings / np.linalg.norm(image_embeddings, axis=1, keepdims=True) # B x D
             image_options.append(np.expand_dims(image_embeddings, axis=1))
 
         caption_options = []
         for c_option in batch["caption_options"]:
             caption_tokenized = torch.cat([image_processor.process_text(c)['input_ids'] for c in c_option])
-            caption_embeddings = model.get_text_features(caption_tokenized).numpy() # B x D
+            caption_embeddings = model.get_text_features(caption_tokenized.to(device)).cpu().numpy() # B x D
             caption_embeddings = caption_embeddings / np.linalg.norm(caption_embeddings, axis=1, keepdims=True) # B x D
             caption_options.append(np.expand_dims(caption_embeddings, axis=1))
 
