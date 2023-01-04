@@ -7,7 +7,7 @@ import hashlib
 import warnings
 from PIL import Image
 from tqdm import tqdm
-from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize, RandomResizedCrop
+from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize, RandomResizedCrop, InterpolationMode
 
 from utils import config
 from .model import build
@@ -64,7 +64,7 @@ class Processor:
         self.eot_token = self.tokenizer.encoder["<end_of_text>"]
         self.context_length = 77
 
-        self.transform = Compose([Resize(model.visual.input_resolution, interpolation = Image.BICUBIC), CenterCrop(model.visual.input_resolution), ToTensor(), Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711))])
+        self.transform = Compose([Resize(model.visual.input_resolution, interpolation = InterpolationMode.BICUBIC), CenterCrop(model.visual.input_resolution), ToTensor(), Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711))])
 
     def process_text(self, texts):
         if(isinstance(texts, str)):

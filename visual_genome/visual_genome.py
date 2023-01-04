@@ -41,7 +41,7 @@ class VG_Attribution_Test(Dataset):
     def __init__(self, image_preprocess, root_dir=VG_IMAGE_DIR):
         '''
         '''
-        with open("visual_genome_attribution.json", "r") as f:
+        with open("./visual_genome/visual_genome_attribution.json", "r") as f:
             self.dataset = json.load(f)
         for item in self.dataset:
             item["image_path"] = os.path.join(root_dir, item["image_path"])

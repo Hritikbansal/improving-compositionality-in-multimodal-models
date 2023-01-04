@@ -15,15 +15,15 @@ device = 'cuda'
 # model = CLIPModel.from_pretrained('openai/clip-vit-base-patch32')
 # image_processor = CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')
 
-model, image_processor = load_model(name = 'RN50', pretrained = False, keep_positional = True, rotate = True)
+model, image_processor = load_model(name = 'RN50', pretrained = True, keep_positional = True, rotate = False)
 
-checkpoint = '/data0/ckpts/hbansal/winoground/clip500k-rotary-with-pe/checkpoints/epoch_64.pt'
+# checkpoint = '/data0/ckpts/hbansal/winoground/clip500k-rotary-with-pe/checkpoints/epoch_64.pt'
 
-state_dict = torch.load(checkpoint, map_location = device)["state_dict"]
-if(next(iter(state_dict.items()))[0].startswith("module")):
-    state_dict = {key[len("module."):]: value for key, value in state_dict.items()}
+# state_dict = torch.load(checkpoint, map_location = device)["state_dict"]
+# if(next(iter(state_dict.items()))[0].startswith("module")):
+  #   state_dict = {key[len("module."):]: value for key, value in state_dict.items()}
 
-model.load_state_dict(state_dict, strict=False)
+# model.load_state_dict(state_dict, strict=False)
 model = model.to(device)
 model.eval()
 
