@@ -489,7 +489,7 @@ class VisualTransformer(nn.Module):
         self.positional_embedding = nn.Parameter(scale * torch.randn((input_resolution // patch_size) ** 2 + 1, width))
         self.ln_pre = LayerNorm(width)
 
-        self.transformer = Transformer(width, layers, heads, rotary = False)
+        self.transformer = Transformer(width, layers, heads, rotary=rotary)
 
         self.ln_post = LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
@@ -556,7 +556,8 @@ class CLIP(nn.Module):
                 width=vision_width,
                 layers=vision_layers,
                 heads=vision_heads,
-                output_dim=embed_dim
+                output_dim=embed_dim,
+                rotary=rotate
             )
         self.transformer = Transformer(
             width=transformer_width,
@@ -695,8 +696,10 @@ def build(state_dict: dict, pretrained: bool, keep_positional: bool, rotate: boo
     transformer_width = state_dict["ln_final.weight"].shape[0]
     transformer_heads = transformer_width // 64
     transformer_layers = len(set(k.split(".")[2] for k in state_dict if k.startswith(f"transformer.resblocks")))
-    print(keep_positional)
-    print(rotate)
+
+    print('Positional encoding - ', keep_positional)
+    print('Rotary embedding - ', rotate)
+
     model = CLIP(
         embed_dim,
         image_resolution, vision_layers, vision_width, vision_patch_size,
@@ -709,6 +712,6 @@ def build(state_dict: dict, pretrained: bool, keep_positional: bool, rotate: boo
 
     convert_weights(model)
     if(pretrained):
-        model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict, strict=False)
 
     return model.eval()
