@@ -202,7 +202,7 @@ class MultiheadAttention(nn.Module):
     bias_k: Optional[torch.Tensor]
     bias_v: Optional[torch.Tensor]
 
-    def __init__(self, embed_dim, num_heads, rotary=False, dropout=0., bias=True, add_bias_kv=False, add_zero_attn=False,
+    def __init__(self, embed_dim, num_heads, rotary=False, kind='text', dropout=0., bias=True, add_bias_kv=False, add_zero_attn=False,
                  kdim=None, vdim=None, batch_first=False, device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super(MultiheadAttention, self).__init__()
@@ -244,7 +244,7 @@ class MultiheadAttention(nn.Module):
 
         self.rotary = rotary
 
-        self.maximum_positional_encoding = 77
+        self.maximum_positional_encoding = 77 if kind == 'text' else 50
         if self.rotary:
             self.embed_rotary_positions = SinusoidalPositionalEmbedding(
                 self.maximum_positional_encoding, self.embed_dim // self.num_heads
@@ -443,10 +443,10 @@ class MultiheadAttention(nn.Module):
             return attn_output, attn_output_weights
 
 class ResidualAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, rotary = False):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, kind: str = 'text', rotary: bool = False):
         super().__init__()
 
-        self.attn = MultiheadAttention(d_model, n_head, rotary=rotary)
+        self.attn = MultiheadAttention(d_model, n_head, kind=kind, rotary=rotary)
         self.ln_1 = LayerNorm(d_model)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(d_model, d_model * 4)),
@@ -467,18 +467,18 @@ class ResidualAttentionBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, rotary = False):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, kind: str = 'text', rotary: bool = False):
         super().__init__()
         self.width = width
         self.layers = layers
-        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask, rotary) for _ in range(layers)])
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask, kind, rotary) for _ in range(layers)])
 
     def forward(self, x: torch.Tensor):
         return self.resblocks(x)
 
 
 class VisualTransformer(nn.Module):
-    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, rotary: bool = False):
+    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, keep_positional: bool = True, rotary: bool = False):
         super().__init__()
         self.input_resolution = input_resolution
         self.output_dim = output_dim
@@ -489,7 +489,8 @@ class VisualTransformer(nn.Module):
         self.positional_embedding = nn.Parameter(scale * torch.randn((input_resolution // patch_size) ** 2 + 1, width))
         self.ln_pre = LayerNorm(width)
 
-        self.transformer = Transformer(width, layers, heads, rotary=rotary)
+        self.keep_positional = keep_positional
+        self.transformer = Transformer(width, layers, heads, kind='vision', rotary=rotary)
 
         self.ln_post = LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
@@ -499,7 +500,8 @@ class VisualTransformer(nn.Module):
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
-        x = x + self.positional_embedding.to(x.dtype)
+        if self.keep_positional:
+            x = x + self.positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
 
         x = x.permute(1, 0, 2)  # NLD -> LND
@@ -557,12 +559,14 @@ class CLIP(nn.Module):
                 layers=vision_layers,
                 heads=vision_heads,
                 output_dim=embed_dim,
+                keep_positional=keep_positional,
                 rotary=rotate
             )
         self.transformer = Transformer(
             width=transformer_width,
             layers=transformer_layers,
             heads=transformer_heads,
+            kind='text',
             attn_mask=self.build_attention_mask(),
             rotary = rotate
         )
