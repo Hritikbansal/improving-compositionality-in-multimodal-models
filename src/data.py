@@ -13,7 +13,7 @@ from utils.augment_image import _augment_image
 ImageFile.LOAD_TRUNCATED_IMAGES = True
     
 class ImageCaptionDataset(Dataset):
-    def __init__(self, path, image_key, caption_key, delimiter, processor, inmodal = False):
+    def __init__(self, path, image_key, caption_key, delimiter, processor, inmodal = False, neg_caption_key = None):
         logging.debug(f"Loading aligned data from {path}")
 
         df = pd.read_csv(path, sep = delimiter)
@@ -22,8 +22,12 @@ class ImageCaptionDataset(Dataset):
         self.images = df[image_key].tolist()
         self.captions = processor.process_text(df[caption_key].tolist())
         self.processor = processor
-        
         self.inmodal = inmodal
+        self.neg_caption_key = neg_caption_key
+
+        if self.neg_caption_key:
+            self.neg_captions = processor.process_text(df[self.neg_caption_key].tolist())
+
         if(inmodal):
             self.augment_captions = processor.process_text([_augment_text(caption) for caption in df[caption_key].tolist()])
         
@@ -43,7 +47,11 @@ class ImageCaptionDataset(Dataset):
             item["input_ids"] = self.captions["input_ids"][idx]
             item["attention_mask"] = self.captions["attention_mask"][idx]
             item["pixel_values"] = self.processor.process_image(Image.open(os.path.join(self.root, self.images[idx])))
-            
+        
+        if self.neg_caption_key:
+            item["negative_input_ids"] = self.neg_captions["input_ids"][idx]
+            item["negative_attention_mask"] = self.neg_captions["attention_mask"][idx]
+
         return item
 
 def get_train_dataloader(options, processor):
@@ -52,7 +60,7 @@ def get_train_dataloader(options, processor):
 
     batch_size = options.batch_size
 
-    dataset = ImageCaptionDataset(path, image_key = options.image_key, caption_key = options.caption_key, delimiter = options.delimiter, processor = processor, inmodal = options.inmodal)
+    dataset = ImageCaptionDataset(path, image_key = options.image_key, caption_key = options.caption_key, delimiter = options.delimiter, processor = processor, inmodal = options.inmodal, neg_caption_key = options.neg_caption_key)
         
     sampler = DistributedSampler(dataset) if(options.distributed) else None
 
@@ -66,7 +74,7 @@ def get_validation_dataloader(options, processor):
     path = options.validation_data
     if(path is None): return
 
-    dataset = ImageCaptionDataset(path, image_key = options.image_key, caption_key = options.caption_key, delimiter = options.delimiter, processor = processor, inmodal = options.inmodal)
+    dataset = ImageCaptionDataset(path, image_key = options.image_key, caption_key = options.caption_key, delimiter = options.delimiter, processor = processor, inmodal = options.inmodal, neg_caption_key = None)
     dataloader = DataLoader(dataset, batch_size = options.batch_size, shuffle = False, num_workers = options.num_workers, pin_memory = True, sampler = None, drop_last = False)
     dataloader.num_samples = len(dataset) 
     dataloader.num_batches = len(dataloader)

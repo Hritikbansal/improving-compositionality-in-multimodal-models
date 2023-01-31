@@ -48,5 +48,7 @@ def parse_args():
     parser.add_argument("--keep_positional", default = False, action = "store_true", help = "keep positional embeddings")
     parser.add_argument("--rotate", default = False, action = "store_true", help = "whether to rotate embeddings or not")
 
+    parser.add_argument("--neg_caption_key", type = str, default = None, help = "Does the data have negative captions")
+
     options = parser.parse_args()
     return options

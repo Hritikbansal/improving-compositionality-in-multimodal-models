@@ -6,6 +6,21 @@ import torch.nn as nn
 import torch.distributed as dist
 from torch.cuda.amp import autocast
 
+def reorder(text_embeds, options):
+    num_devices = options.num_devices
+    per_gpu_batch_size = options.batch_size
+    assert per_gpu_batch_size == len(text_embeds) // num_devices // 2
+    original_text_embeds = []
+    negative_text_embeds = []
+    for i in range(0, len(text_embeds), per_gpu_batch_size):
+        if (i // per_gpu_batch_size)%2 == 0:
+            original_text_embeds.append(text_embeds[i: i + per_gpu_batch_size])
+        else:
+            negative_text_embeds.append(text_embeds[i: i + per_gpu_batch_size])
+    original_text_embeds = torch.cat(original_text_embeds)
+    negative_text_embeds = torch.cat(negative_text_embeds)
+    return torch.cat([original_text_embeds, negative_text_embeds])
+
 def get_loss(umodel, outputs, criterion, options):  
     if(options.inmodal):
         image_embeds, augmented_image_embeds = outputs.image_embeds[:len(outputs.image_embeds) // 2], outputs.image_embeds[len(outputs.image_embeds) // 2:]
@@ -39,19 +54,23 @@ def get_loss(umodel, outputs, criterion, options):
         
             image_embeds = torch.cat(gathered_image_embeds[:options.rank] + [image_embeds] + gathered_image_embeds[options.rank + 1:])
             text_embeds  = torch.cat(gathered_text_embeds[:options.rank]+ [text_embeds] + gathered_text_embeds[options.rank + 1:])
+            if (options.neg_caption_key):
+                text_embeds = reorder(text_embeds, options)
         
     logits_text_per_image = umodel.logit_scale.exp() * image_embeds @ text_embeds.t()
     logits_image_per_text = logits_text_per_image.t()
+
+    if options.neg_caption_key:
+        logits_image_per_text = logits_image_per_text[:len(logits_image_per_text) // 2]  
 
     if(options.inmodal):
         logits_image_per_augmented_image = umodel.logit_scale.exp() * image_embeds @ augmented_image_embeds.t()
         logits_text_per_augmented_text = umodel.logit_scale.exp() * text_embeds @ augmented_text_embeds.t()
 
     batch_size = len(logits_text_per_image)
-    
-    target = torch.arange(batch_size).long().to(options.device, non_blocking = True)
-    
     contrastive_loss = torch.tensor(0).to(options.device)
+    target = torch.arange(batch_size).long().to(options.device, non_blocking = True)
+
     if(options.inmodal):
         crossmodal_contrastive_loss = (criterion(logits_text_per_image, target) + criterion(logits_image_per_text, target)) / 2
         inmodal_contrastive_loss = (criterion(logits_image_per_augmented_image, target) + criterion(logits_text_per_augmented_text, target)) / 2
@@ -61,14 +80,16 @@ def get_loss(umodel, outputs, criterion, options):
         contrastive_loss = crossmodal_contrastive_loss
 
     inmodal_cyclic_loss = torch.tensor(0).to(options.device)
-    if(options.cylambda1 > 0):
-        logits_image_per_image = umodel.logit_scale.exp() * image_embeds @ image_embeds.t()
-        logits_text_per_text = umodel.logit_scale.exp() * text_embeds @ text_embeds.t()
-        inmodal_cyclic_loss = (logits_image_per_image - logits_text_per_text).square().mean() / (umodel.logit_scale.exp() * umodel.logit_scale.exp()) * batch_size
-    
     crossmodal_cyclic_loss = torch.tensor(0).to(options.device)
-    if(options.cylambda2 > 0):
-        crossmodal_cyclic_loss = (logits_text_per_image - logits_image_per_text).square().mean() / (umodel.logit_scale.exp() * umodel.logit_scale.exp()) * batch_size
+
+    if not options.neg_caption_key:
+        if(options.cylambda1 > 0):
+            logits_image_per_image = umodel.logit_scale.exp() * image_embeds @ image_embeds.t()
+            logits_text_per_text = umodel.logit_scale.exp() * text_embeds @ text_embeds.t()
+            inmodal_cyclic_loss = (logits_image_per_image - logits_text_per_text).square().mean() / (umodel.logit_scale.exp() * umodel.logit_scale.exp()) * batch_size
+        
+        if(options.cylambda2 > 0):
+            crossmodal_cyclic_loss = (logits_text_per_image - logits_image_per_text).square().mean() / (umodel.logit_scale.exp() * umodel.logit_scale.exp()) * batch_size
 
     cyclic_loss = options.cylambda1 * inmodal_cyclic_loss + options.cylambda2 * crossmodal_cyclic_loss
     loss = contrastive_loss + cyclic_loss
@@ -102,6 +123,11 @@ def train(epoch, model, data, optimizer, scheduler, scaler, options):
             pixel_values = torch.cat([pixel_values, augmented_pixel_values])
         else:
             input_ids, attention_mask, pixel_values = batch["input_ids"].to(options.device, non_blocking = True), batch["attention_mask"].to(options.device, non_blocking = True), batch["pixel_values"].to(options.device, non_blocking = True)
+
+        if(options.neg_caption_key):
+            neg_input_ids, neg_attention_mask = batch["negative_input_ids"].to(options.device, non_blocking = True), batch["negative_attention_mask"].to(options.device, non_blocking = True)
+            input_ids = torch.cat([input_ids, neg_input_ids])
+            attention_mask = torch.cat([attention_mask, neg_attention_mask])
 
         outputs = model(input_ids = input_ids, attention_mask = attention_mask, pixel_values = pixel_values)
 
