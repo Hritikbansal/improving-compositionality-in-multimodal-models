@@ -36,13 +36,16 @@ while i < len(images):
     subset_images = images[i : i + args.batch_size]
     subset_captions = captions[i : i + args.batch_size]
     run_images = list(map(lambda x: os.path.join(root, x), subset_images))
-    results = model(run_images).pandas().xyxy
-    for index in tqdm(range(len(results))):
-        result = results[index]
-        confidence = result['confidence'].tolist()
-        names  = result['name'].tolist()
-        zipped = list(zip(names, confidence))
-        with open(filename, 'a') as csvfile:
-            csvwriter = csv.writer(csvfile)
-            csvwriter.writerow([str(subset_images[index]), subset_captions[index], str(zipped)])
+    try:
+        results = model(run_images).pandas().xyxy
+        for index in tqdm(range(len(results))):
+            result = results[index]
+            confidence = result['confidence'].tolist()
+            names  = result['name'].tolist()
+            zipped = list(zip(names, confidence))
+            with open(filename, 'a') as csvfile:
+                csvwriter = csv.writer(csvfile)
+                csvwriter.writerow([str(subset_images[index]), subset_captions[index], str(zipped)])
+    except:
+        pass
     i += args.batch_size
