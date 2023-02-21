@@ -18,7 +18,7 @@ for j in tqdm(range(len(df))):
     objs = list(set([x[0] for x in eval(df.iloc[j]['objects'])]))
     for obj in objs:
         obj_to_index[obj].append(j)
-print(len(obj_to_index))
+print(len(obj_to_index.keys()))
 neg_images = []
 for index in tqdm(range(len(df))):
     objs = list(set([x[0] for x in eval(df.iloc[index]['objects'])]))
