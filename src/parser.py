@@ -49,6 +49,8 @@ def parse_args():
     parser.add_argument("--rotate", default = False, action = "store_true", help = "whether to rotate embeddings or not")
 
     parser.add_argument("--neg_caption_key", type = str, default = None, help = "Does the data have negative captions")
-
+    parser.add_argument("--neg_image_key", type = str, default = None, help = "Does the data have negative image captions column")
+    parser.add_argument("--shuffle_image_patches", default = False, action = "store_true", help = "shuffle image patch during pretraining")
+    
     options = parser.parse_args()
     return options

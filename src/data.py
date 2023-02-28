@@ -13,7 +13,7 @@ from utils.augment_image import _augment_image
 ImageFile.LOAD_TRUNCATED_IMAGES = True
     
 class ImageCaptionDataset(Dataset):
-    def __init__(self, path, image_key, caption_key, delimiter, processor, inmodal = False, neg_caption_key = None):
+    def __init__(self, path, image_key, caption_key, delimiter, processor, inmodal = False, neg_caption_key = None, neg_image_key = None, shuffle_image_patches = None):
         logging.debug(f"Loading aligned data from {path}")
 
         df = pd.read_csv(path, sep = delimiter)
@@ -24,9 +24,14 @@ class ImageCaptionDataset(Dataset):
         self.processor = processor
         self.inmodal = inmodal
         self.neg_caption_key = neg_caption_key
+        self.neg_image_key   = neg_image_key
+        self.shuffle_image_patches = shuffle_image_patches
 
         if self.neg_caption_key:
             self.neg_captions = processor.process_text(df[self.neg_caption_key].tolist())
+        
+        if self.neg_image_key:
+            self.neg_images  = df[neg_image_key].tolist()
 
         if(inmodal):
             self.augment_captions = processor.process_text([_augment_text(caption) for caption in df[caption_key].tolist()])
@@ -51,6 +56,12 @@ class ImageCaptionDataset(Dataset):
         if self.neg_caption_key:
             item["negative_input_ids"] = self.neg_captions["input_ids"][idx]
             item["negative_attention_mask"] = self.neg_captions["attention_mask"][idx]
+        
+        if self.neg_image_key:
+            item["negative_pixel_values"] = self.processor.process_image(Image.open(os.path.join(self.root, self.neg_images[idx])))
+        
+        if self.shuffle_image_patches:
+            raise NotImplementedError('Placeholder for Dipti to shuffle the images')
 
         return item
 
@@ -60,7 +71,7 @@ def get_train_dataloader(options, processor):
 
     batch_size = options.batch_size
 
-    dataset = ImageCaptionDataset(path, image_key = options.image_key, caption_key = options.caption_key, delimiter = options.delimiter, processor = processor, inmodal = options.inmodal, neg_caption_key = options.neg_caption_key)
+    dataset = ImageCaptionDataset(path, image_key = options.image_key, caption_key = options.caption_key, delimiter = options.delimiter, processor = processor, inmodal = options.inmodal, neg_caption_key = options.neg_caption_key, neg_image_key = options.neg_image_key, shuffle_image_patches = options.shuffle_image_patches)
         
     sampler = DistributedSampler(dataset) if(options.distributed) else None
 

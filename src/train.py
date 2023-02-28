@@ -6,20 +6,20 @@ import torch.nn as nn
 import torch.distributed as dist
 from torch.cuda.amp import autocast
 
-def reorder(text_embeds, options):
+def reorder(embeds, options):
     num_devices = options.num_devices
     per_gpu_batch_size = options.batch_size
-    assert per_gpu_batch_size == len(text_embeds) // num_devices // 2
-    original_text_embeds = []
-    negative_text_embeds = []
-    for i in range(0, len(text_embeds), per_gpu_batch_size):
+    assert per_gpu_batch_size == len(embeds) // num_devices // 2
+    original_embeds = []
+    negative_embeds = []
+    for i in range(0, len(embeds), per_gpu_batch_size):
         if (i // per_gpu_batch_size)%2 == 0:
-            original_text_embeds.append(text_embeds[i: i + per_gpu_batch_size])
+            original_embeds.append(embeds[i: i + per_gpu_batch_size])
         else:
-            negative_text_embeds.append(text_embeds[i: i + per_gpu_batch_size])
-    original_text_embeds = torch.cat(original_text_embeds)
-    negative_text_embeds = torch.cat(negative_text_embeds)
-    return torch.cat([original_text_embeds, negative_text_embeds])
+            negative_embeds.append(embeds[i: i + per_gpu_batch_size])
+    original_embeds = torch.cat(original_embeds)
+    negative_embeds = torch.cat(negative_embeds)
+    return torch.cat([original_embeds, negative_embeds])
 
 def get_loss(umodel, outputs, criterion, options):  
     if(options.inmodal):
@@ -56,18 +56,24 @@ def get_loss(umodel, outputs, criterion, options):
             text_embeds  = torch.cat(gathered_text_embeds[:options.rank]+ [text_embeds] + gathered_text_embeds[options.rank + 1:])
             if (options.neg_caption_key):
                 text_embeds = reorder(text_embeds, options)
+            if (options.neg_image_key or options.shuffle_image_patches):
+                image_embeds = reorder(image_embeds, options)
         
     logits_text_per_image = umodel.logit_scale.exp() * image_embeds @ text_embeds.t()
     logits_image_per_text = logits_text_per_image.t()
 
     if options.neg_caption_key:
         logits_image_per_text = logits_image_per_text[:len(logits_image_per_text) // 2]  
+    
+    if (options.neg_image_key or options.shuffle_image_patches):
+        logits_text_per_image = logits_text_per_image[:len(logits_text_per_image) // 2]
 
     if(options.inmodal):
         logits_image_per_augmented_image = umodel.logit_scale.exp() * image_embeds @ augmented_image_embeds.t()
         logits_text_per_augmented_text = umodel.logit_scale.exp() * text_embeds @ augmented_text_embeds.t()
+    
+    batch_size = len(logits_text_per_image)    
 
-    batch_size = len(logits_text_per_image)
     contrastive_loss = torch.tensor(0).to(options.device)
     target = torch.arange(batch_size).long().to(options.device, non_blocking = True)
 
@@ -82,7 +88,7 @@ def get_loss(umodel, outputs, criterion, options):
     inmodal_cyclic_loss = torch.tensor(0).to(options.device)
     crossmodal_cyclic_loss = torch.tensor(0).to(options.device)
 
-    if not options.neg_caption_key:
+    if not options.neg_caption_key and not options.neg_image_key and not options.shuffle_image_patches:
         if(options.cylambda1 > 0):
             logits_image_per_image = umodel.logit_scale.exp() * image_embeds @ image_embeds.t()
             logits_text_per_text = umodel.logit_scale.exp() * text_embeds @ text_embeds.t()
@@ -128,6 +134,9 @@ def train(epoch, model, data, optimizer, scheduler, scaler, options):
             neg_input_ids, neg_attention_mask = batch["negative_input_ids"].to(options.device, non_blocking = True), batch["negative_attention_mask"].to(options.device, non_blocking = True)
             input_ids = torch.cat([input_ids, neg_input_ids])
             attention_mask = torch.cat([attention_mask, neg_attention_mask])
+        if(options.neg_image_key or options.shuffle_image_patches):
+            neg_pixel_values = batch["negative_pixel_values"].to(options.device, non_blocking = True)
+            pixel_values = torch.cat([pixel_values, neg_pixel_values])
 
         outputs = model(input_ids = input_ids, attention_mask = attention_mask, pixel_values = pixel_values)
 
