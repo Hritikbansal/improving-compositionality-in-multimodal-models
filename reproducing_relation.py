@@ -7,23 +7,20 @@ import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-
 VG_IMAGE_DIR = '/data0/datasets/VisualGenome/images/'
 
-device = 'cuda'
+device = 'cuda:4'
 
-# model = CLIPModel.from_pretrained('openai/clip-vit-base-patch32')
-# image_processor = CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')
+model, image_processor = load_model(name = 'ViT-B/32', pretrained = False, keep_positional = True, rotate = False)
 
-model, image_processor = load_model(name = 'RN50', pretrained = True, keep_positional = True, rotate = False)
+checkpoint = '/data0/ckpts/diptisahu/finetuned/clip500k/shuffle-images-and-captions/checkpoints/epoch_5.pt'
 
-# checkpoint = '/data0/ckpts/hbansal/winoground/clip500k-rotary-with-pe/checkpoints/epoch_64.pt'
+state_dict = torch.load(checkpoint, map_location = device)["state_dict"]
 
-# state_dict = torch.load(checkpoint, map_location = device)["state_dict"]
-# if(next(iter(state_dict.items()))[0].startswith("module")):
-  #   state_dict = {key[len("module."):]: value for key, value in state_dict.items()}
+if(next(iter(state_dict.items()))[0].startswith("module")):
+    state_dict = {key[len("module."):]: value for key, value in state_dict.items()}
 
-# model.load_state_dict(state_dict, strict=False)
+model.load_state_dict(state_dict, strict=False)
 model = model.to(device)
 model.eval()
 
@@ -238,7 +235,6 @@ metrics = macroacc_evaluation(scores, dataset)
 all_accs = []
 for k,v in metrics.items():
     if "-Acc" in k:
-        print(k, v)
         all_accs.append(v)
 
 print(np.mean(all_accs))

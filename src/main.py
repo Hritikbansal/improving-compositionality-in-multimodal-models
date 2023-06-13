@@ -88,7 +88,7 @@ def worker(rank, options, logger):
     if(options.checkpoint is not None):
         if(os.path.isfile(options.checkpoint)):
             checkpoint = torch.load(options.checkpoint, map_location = options.device)
-            start_epoch = checkpoint["epoch"]
+            # start_epoch = checkpoint["epoch"]
             state_dict = checkpoint["state_dict"]
             if(not options.distributed and next(iter(state_dict.items()))[0].startswith("module")):
                 state_dict = {key[len("module."):]: value for key, value in state_dict.items()}

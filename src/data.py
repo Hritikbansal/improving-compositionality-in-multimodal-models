@@ -61,7 +61,7 @@ class ImageCaptionDataset(Dataset):
             item["negative_pixel_values"] = self.processor.process_image(Image.open(os.path.join(self.root, self.neg_images[idx])))
         
         if self.shuffle_image_patches:
-            raise NotImplementedError('Placeholder for Dipti to shuffle the images')
+            item["negative_pixel_values"] = self.processor.process_image(Image.open(os.path.join(self.root, 'permuted_images/', self.images[idx].split('/')[-1])))
 
         return item
 

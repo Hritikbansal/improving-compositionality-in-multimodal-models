@@ -7,14 +7,13 @@ import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-
 VG_IMAGE_DIR = '/data0/datasets/VisualGenome/images/'
 
-device = 'cuda'
+device = 'cuda:4'
 
-model, image_processor = load_model(name = 'RN50', pretrained = False, keep_positional = True, rotate = False)
+model, image_processor = load_model(name = 'ViT-B/32', pretrained = False, keep_positional = True, rotate = False)
 
-checkpoint = '/data0/ckpts/hbansal/winoground/clip500k-without-rotary-with-pe/checkpoints/epoch_64.pt'
+checkpoint = '/data0/ckpts/diptisahu/finetuned/clip500k/shuffle-images-and-captions/checkpoints/epoch_5.pt'
 
 state_dict = torch.load(checkpoint, map_location = device)["state_dict"]
 if(next(iter(state_dict.items()))[0].startswith("module")):
